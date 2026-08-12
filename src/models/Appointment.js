@@ -70,6 +70,14 @@ const appointmentSchema = new mongoose.Schema(
       ],
       advice: { type: String, default: "" },
     },
+    reminderSent: {
+      type: Boolean,
+      default: false,
+    },
+    oneHourReminderSent: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

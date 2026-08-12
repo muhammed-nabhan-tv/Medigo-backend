@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { register, login, getProfile, refresh, verifyOTP, resendOTP, logout, getDoctors } = require("../controllers/authController");
+const { register, login, getProfile, refresh, verifyOTP, resendOTP, logout, getDoctors, updateProfile } = require("../controllers/authController");
 const authenticateJWT = require("../middlewares/authMiddleware");
 
 // Authentication Endpoints
@@ -11,6 +11,7 @@ router.post("/resend-otp", resendOTP);
 router.post("/refresh", refresh);
 router.post("/logout", logout);
 router.get("/profile", authenticateJWT, getProfile);
+router.put("/profile", authenticateJWT, updateProfile);
 router.get("/doctors", getDoctors);
 
 module.exports = router;

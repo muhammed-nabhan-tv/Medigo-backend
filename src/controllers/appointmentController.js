@@ -1,5 +1,7 @@
 const Appointment = require("../models/Appointment");
 const User = require("../models/User");
+const { sendAppointmentCreatedEmail, sendAppointmentCancelledEmail, sendPrescriptionAddedEmail } = require("../utils/emailService");
+const { createAndSendNotification } = require("../utils/notificationService");
 
 // Create a new appointment
 const createAppointment = async (req, res) => {
@@ -64,8 +66,43 @@ const createAppointment = async (req, res) => {
       time,
       type: type || "Video Consultation",
       reason: reason || "General Checkup",
-      status: "Confirmed",
     });
+
+    // Send email notifications
+    try {
+      await sendAppointmentCreatedEmail({
+        patientEmail: patient.email,
+        patientName: patient.fullName,
+        doctorEmail: doctor.email,
+        doctorName: doctor.fullName,
+        date: appointment.date,
+        time: appointment.time,
+        type: appointment.type
+      });
+    } catch (emailErr) {
+      console.error("Failed to send appointment confirmation emails:", emailErr);
+    }
+
+    // Trigger live in-app notifications
+    try {
+      await createAndSendNotification({
+        userId: patientId,
+        title: "Appointment Booked",
+        message: `Your appointment with Dr. ${doctor.fullName} on ${date} at ${time} is confirmed.`,
+        type: "appointment_confirmed",
+        link: "/profile",
+      });
+
+      await createAndSendNotification({
+        userId: doctorId,
+        title: "New Appointment Scheduled",
+        message: `${patient.fullName} has scheduled a consultation with you on ${date} at ${time}.`,
+        type: "appointment_created",
+        link: "/doctor",
+      });
+    } catch (notifErr) {
+      console.error("Failed to send appointment notifications:", notifErr);
+    }
 
     return res.status(201).json(appointment);
   } catch (error) {
@@ -126,6 +163,55 @@ const updateAppointmentStatus = async (req, res) => {
     appointment.status = status;
     await appointment.save();
 
+    if (status === "Cancelled") {
+      try {
+        const patient = await User.findById(appointment.patientId);
+        const doctor = await User.findById(appointment.doctorId);
+
+        if (patient && doctor) {
+          // Send cancellation emails
+          await sendAppointmentCancelledEmail({
+            toEmail: patient.email,
+            recipientName: patient.fullName,
+            otherPartyName: `Dr. ${doctor.fullName}`,
+            date: appointment.date,
+            time: appointment.time,
+          });
+
+          await sendAppointmentCancelledEmail({
+            toEmail: doctor.email,
+            recipientName: `Dr. ${doctor.fullName}`,
+            otherPartyName: patient.fullName,
+            date: appointment.date,
+            time: appointment.time,
+          });
+
+          // Live notifications (notify the other party depending on who cancelled)
+          const actorId = req.user._id.toString();
+          
+          if (actorId === patient._id.toString()) {
+            await createAndSendNotification({
+              userId: doctor._id,
+              title: "Appointment Cancelled",
+              message: `Patient ${patient.fullName} has cancelled the appointment scheduled on ${appointment.date} at ${appointment.time}.`,
+              type: "appointment_cancelled",
+              link: "/doctor",
+            });
+          } else {
+            await createAndSendNotification({
+              userId: patient._id,
+              title: "Appointment Cancelled",
+              message: `Dr. ${doctor.fullName} has cancelled your appointment scheduled on ${appointment.date} at ${appointment.time}.`,
+              type: "appointment_cancelled",
+              link: "/profile",
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to send cancellation emails/notifications:", err);
+      }
+    }
+
     return res.status(200).json(appointment);
   } catch (error) {
     console.error("Update Appointment Status Error:", error);
@@ -182,6 +268,34 @@ const addPrescription = async (req, res) => {
     appointment.status = "Completed";
     await appointment.save();
 
+    try {
+      const patient = await User.findById(appointment.patientId);
+      const doctor = await User.findById(appointment.doctorId);
+
+      if (patient && doctor) {
+        // Send email to patient
+        await sendPrescriptionAddedEmail({
+          patientEmail: patient.email,
+          patientName: patient.fullName,
+          doctorName: doctor.fullName,
+          date: appointment.date,
+          rxId,
+          appointmentId: appointment._id,
+        });
+
+        // Send live notification to patient
+        await createAndSendNotification({
+          userId: patient._id,
+          title: "New Prescription Added",
+          message: `Dr. ${doctor.fullName} has uploaded a digital prescription for your consultation on ${appointment.date}.`,
+          type: "prescription_added",
+          link: `/prescription/${appointment._id}`,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to dispatch prescription updates:", err);
+    }
+
     return res.status(200).json(appointment);
   } catch (error) {
     console.error("Add Prescription Error:", error);
@@ -214,6 +328,21 @@ const getAppointmentById = async (req, res) => {
   }
 };
 
+const getPatientHistoryForDoctor = async (req, res) => {
+  try {
+    if (req.user.role !== "doctor" && req.user.role !== "clinic") {
+      return res.status(403).json({ message: "Not authorized to view patient history" });
+    }
+
+    const { patientId } = req.params;
+    const history = await Appointment.find({ patientId }).sort({ date: -1, time: -1 });
+    return res.status(200).json(history);
+  } catch (error) {
+    console.error("Get Patient History Error:", error);
+    return res.status(500).json({ message: "Server error fetching patient history" });
+  }
+};
+
 module.exports = {
   createAppointment,
   getPatientAppointments,
@@ -221,4 +350,5 @@ module.exports = {
   updateAppointmentStatus,
   addPrescription,
   getAppointmentById,
+  getPatientHistoryForDoctor,
 };

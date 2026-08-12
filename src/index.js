@@ -5,9 +5,14 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
 const clinicRoutes = require("./routes/clinicRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
+const { startReminderScheduler } = require("./utils/reminderScheduler");
 
 // Connect to MongoDB Database
-connectDB();
+connectDB().then(() => {
+  // Start the background reminder scheduler
+  startReminderScheduler();
+});
 
 const app = express();
 
@@ -24,6 +29,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/clinic", clinicRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Health check endpoint
 app.get("/", (req, res) => {

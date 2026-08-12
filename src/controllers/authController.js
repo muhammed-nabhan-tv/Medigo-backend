@@ -392,6 +392,41 @@ const getDoctors = async (req, res) => {
   }
 };
 
+// Update User Profile / Availability slots
+const updateProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const { fullName, dob, phone, availableDays, availableSlots } = req.body;
+
+    if (fullName !== undefined) user.fullName = fullName;
+    if (dob !== undefined) user.dob = dob;
+    if (phone !== undefined) user.phone = phone;
+    if (availableDays !== undefined) user.availableDays = availableDays;
+    if (availableSlots !== undefined) user.availableSlots = availableSlots;
+
+    await user.save();
+
+    // Remove sensitive fields
+    const updatedUser = user.toObject();
+    delete updatedUser.password;
+    delete updatedUser.refreshToken;
+    delete updatedUser.otpCode;
+    delete updatedUser.otpExpires;
+
+    return res.status(200).json({
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Update Profile Error:", error);
+    return res.status(500).json({ message: "Server error updating profile" });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -401,4 +436,5 @@ module.exports = {
   logout,
   getProfile,
   getDoctors,
+  updateProfile,
 };

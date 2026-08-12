@@ -129,11 +129,115 @@ const sendOtpEmail = async ({ to, otp }) => {
   return sendEmail({ to, subject, html, text });
 };
 
+const sendAppointmentCreatedEmail = async ({ patientEmail, patientName, doctorEmail, doctorName, date, time, type }) => {
+  // Send to Patient
+  const patientSubject = `Appointment Confirmed: Dr. ${doctorName}`;
+  const patientText = `Hi ${patientName},\n\nYour appointment with Dr. ${doctorName} is confirmed.\nDate: ${date}\nTime: ${time}\nType: ${type}\n\nThank you for choosing Medigo!`;
+  const patientHtml = `
+    <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; color: #0f172a; border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #059669; margin-top: 0;">Appointment Confirmed!</h2>
+      <p>Hi <strong>${patientName}</strong>,</p>
+      <p>Your consultation request with <strong>Dr. ${doctorName}</strong> is successfully scheduled and confirmed:</p>
+      <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; margin: 18px 0;">
+        <strong>Specialist:</strong> Dr. ${doctorName}<br/>
+        <strong>Date:</strong> ${date}<br/>
+        <strong>Time:</strong> ${time}<br/>
+        <strong>Session Type:</strong> ${type}
+      </div>
+      <p>You can access details and join the session from your patient profile dashboard.</p>
+      <p style="margin: 28px 0;">
+        <a href="${process.env.FRONTEND_URL || "http://localhost:3000"}/profile" style="background:#059669;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600;">
+          View Patient Dashboard
+        </a>
+      </p>
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/>
+      <p style="font-size:12px;color:#94a3b8;margin-bottom:0;">— The Medigo team</p>
+    </div>
+  `;
+  await sendEmail({ to: patientEmail, subject: patientSubject, html: patientHtml, text: patientText });
+
+  // Send to Doctor
+  const doctorSubject = `New Appointment Booked: ${patientName}`;
+  const doctorText = `Hi Dr. ${doctorName},\n\nYou have a new appointment scheduled with ${patientName}.\nDate: ${date}\nTime: ${time}\nType: ${type}\n\nPlease check your schedule dashboard.`;
+  const doctorHtml = `
+    <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; color: #0f172a; border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #059669; margin-top: 0;">New Consultation Booked</h2>
+      <p>Hi <strong>Dr. ${doctorName}</strong>,</p>
+      <p>Patient <strong>${patientName}</strong> has scheduled a new consultation with you:</p>
+      <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; margin: 18px 0;">
+        <strong>Patient Name:</strong> ${patientName}<br/>
+        <strong>Date:</strong> ${date}<br/>
+        <strong>Time:</strong> ${time}<br/>
+        <strong>Session Type:</strong> ${type}
+      </div>
+      <p>Please check your schedule dashboard to prepare for the session and write prescriptions.</p>
+      <p style="margin: 28px 0;">
+        <a href="${process.env.FRONTEND_URL || "http://localhost:3000"}/doctor" style="background:#059669;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600;">
+          View Specialist Dashboard
+        </a>
+      </p>
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/>
+      <p style="font-size:12px;color:#94a3b8;margin-bottom:0;">— The Medigo team</p>
+    </div>
+  `;
+  await sendEmail({ to: doctorEmail, subject: doctorSubject, html: doctorHtml, text: doctorText });
+};
+
+const sendAppointmentCancelledEmail = async ({ toEmail, recipientName, otherPartyName, date, time }) => {
+  const subject = `Cancelled Appointment Notification: ${date}`;
+  const text = `Hi ${recipientName},\n\nWe would like to inform you that your scheduled appointment on ${date} at ${time} with ${otherPartyName} has been cancelled.\n\nFor questions, please contact our support team.`;
+  const html = `
+    <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; color: #0f172a; border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #dc2626; margin-top: 0;">Consultation Cancelled</h2>
+      <p>Hi <strong>${recipientName}</strong>,</p>
+      <p>This email is to confirm that the scheduled consultation on <strong>${date}</strong> at <strong>${time}</strong> with <strong>${otherPartyName}</strong> has been cancelled.</p>
+      <p style="color: #475569; font-size: 14px;">If you need to reschedule, please visit the Medigo portal to view available slots and choose a new session.</p>
+      <p style="margin: 28px 0;">
+        <a href="${process.env.FRONTEND_URL || "http://localhost:3000"}" style="background:#0f172a;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600;">
+          Go to Medigo Homepage
+        </a>
+      </p>
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/>
+      <p style="font-size:12px;color:#94a3b8;margin-bottom:0;">— The Medigo team</p>
+    </div>
+  `;
+  return sendEmail({ to: toEmail, subject, html, text });
+};
+
+const sendPrescriptionAddedEmail = async ({ patientEmail, patientName, doctorName, date, rxId, appointmentId }) => {
+  const subject = `New Prescription Added by Dr. ${doctorName}`;
+  const text = `Hi ${patientName},\n\nDr. ${doctorName} has added a prescription for your consultation on ${date} (Rx ID: ${rxId}).\n\nYou can view and download it at: ${process.env.FRONTEND_URL || "http://localhost:3000"}/prescription/${appointmentId}`;
+  const html = `
+    <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; color: #0f172a; border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #059669; margin-top: 0;">Prescription Added</h2>
+      <p>Hi <strong>${patientName}</strong>,</p>
+      <p><strong>Dr. ${doctorName}</strong> has uploaded a prescription for your recent medical consultation on <strong>${date}</strong>.</p>
+      <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; margin: 18px 0; border-left: 4px solid #059669;">
+        <strong>Rx Reference ID:</strong> ${rxId}<br/>
+        <strong>Doctor:</strong> Dr. ${doctorName}<br/>
+        <strong>Consultation Date:</strong> ${date}
+      </div>
+      <p>Click the button below to view, print, or download your digital prescription copy securely.</p>
+      <p style="margin: 28px 0;">
+        <a href="${process.env.FRONTEND_URL || "http://localhost:3000"}/prescription/${appointmentId}" style="background:#059669;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600;">
+          View Digital Rx
+        </a>
+      </p>
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/>
+      <p style="font-size:12px;color:#94a3b8;margin-bottom:0;">— The Medigo team</p>
+    </div>
+  `;
+  return sendEmail({ to: patientEmail, subject, html, text });
+};
+
 module.exports = {
   sendEmail,
   sendDoctorInviteEmail,
   sendDoctorCredentialsEmail,
   sendOtpEmail,
+  sendAppointmentCreatedEmail,
+  sendAppointmentCancelledEmail,
+  sendPrescriptionAddedEmail,
   isSmtpConfigured,
 };
 
