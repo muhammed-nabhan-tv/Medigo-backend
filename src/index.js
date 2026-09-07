@@ -28,7 +28,7 @@ initSocket(server);
 // Set Up Global Middlewares
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3001"], // frontend local dev server
+    origin: ["http://localhost:3000", "http://localhost:3001","https://medigo-frontend-ebon.vercel.app"], // frontend local dev server
     credentials: true,
   })
 );
