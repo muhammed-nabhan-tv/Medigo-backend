@@ -342,20 +342,196 @@ const getClinicDoctors = async (req, res) => {
 };
 
 // Appointments for all doctors under this clinic
+// Appointments for all doctors under this clinic (All / Ever appointments)
 const getClinicAppointments = async (req, res) => {
   try {
     if (req.user.role !== "clinic") {
       return res.status(403).json({ message: "Only clinic accounts can view clinic appointments" });
     }
 
-    const appointments = await Appointment.find({ clinicId: req.user._id }).sort({
-      createdAt: -1,
-    });
+    // Find all doctors under this clinic
+    const doctors = await User.find({ role: "doctor", clinicId: req.user._id }).select("_id");
+    const doctorIds = doctors.map((d) => d._id);
+
+    // Retrieve all appointments associated either directly with the clinic or with any of its doctors
+    const appointments = await Appointment.find({
+      $or: [{ clinicId: req.user._id }, { doctorId: { $in: doctorIds } }],
+    })
+      .populate("patientId", "fullName email phone dob createdAt")
+      .populate("doctorId", "fullName email phone category education experience availableDays availableSlots rating")
+      .sort({ date: -1, time: -1, createdAt: -1 });
 
     return res.status(200).json(appointments);
   } catch (error) {
     console.error("Get Clinic Appointments Error:", error);
     return res.status(500).json({ message: "Server error fetching clinic appointments" });
+  }
+};
+
+// All unique patients who have booked with this clinic / clinic's doctors
+const getClinicPatients = async (req, res) => {
+  try {
+    if (req.user.role !== "clinic") {
+      return res.status(403).json({ message: "Only clinic accounts can view clinic patients" });
+    }
+
+    const doctors = await User.find({ role: "doctor", clinicId: req.user._id }).select("_id");
+    const doctorIds = doctors.map((d) => d._id);
+
+    const appointments = await Appointment.find({
+      $or: [{ clinicId: req.user._id }, { doctorId: { $in: doctorIds } }],
+    })
+      .populate("patientId", "fullName email phone dob createdAt")
+      .sort({ date: -1, time: -1, createdAt: -1 });
+
+    const patientMap = new Map();
+    for (const app of appointments) {
+      if (!app.patientId) continue;
+      const pId = app.patientId._id.toString();
+      if (!patientMap.has(pId)) {
+        patientMap.set(pId, {
+          _id: app.patientId._id,
+          fullName: app.patientId.fullName,
+          email: app.patientId.email,
+          phone: app.patientId.phone,
+          dob: app.patientId.dob,
+          createdAt: app.patientId.createdAt,
+          totalAppointments: 1,
+          lastAppointmentDate: app.date,
+          lastAppointmentTime: app.time,
+          lastDoctorName: app.doctorName,
+          hasPrescription: !!(app.prescription?.medicines?.length),
+        });
+      } else {
+        const item = patientMap.get(pId);
+        item.totalAppointments += 1;
+        if (app.prescription?.medicines?.length) {
+          item.hasPrescription = true;
+        }
+      }
+    }
+
+    return res.status(200).json(Array.from(patientMap.values()));
+  } catch (error) {
+    console.error("Get Clinic Patients Error:", error);
+    return res.status(500).json({ message: "Server error fetching clinic patients" });
+  }
+};
+
+// Detailed Profile for a specific patient under this clinic
+const getClinicPatientProfile = async (req, res) => {
+  try {
+    if (req.user.role !== "clinic") {
+      return res.status(403).json({ message: "Only clinic accounts can view patient profiles" });
+    }
+
+    const { id } = req.params;
+    const patient = await User.findById(id).select("-password -refreshToken -otpCode -otpExpires");
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    const doctors = await User.find({ role: "doctor", clinicId: req.user._id }).select("_id");
+    const doctorIds = doctors.map((d) => d._id);
+
+    const appointments = await Appointment.find({
+      patientId: id,
+      $or: [{ clinicId: req.user._id }, { doctorId: { $in: doctorIds } }],
+    })
+      .populate("doctorId", "fullName email phone category education rating")
+      .sort({ date: -1, time: -1, createdAt: -1 });
+
+    const prescriptions = appointments
+      .filter((app) => app.prescription && app.prescription.medicines && app.prescription.medicines.length > 0)
+      .map((app) => ({
+        appointmentId: app._id,
+        date: app.date,
+        time: app.time,
+        doctorName: app.doctorName,
+        specialty: app.specialty,
+        prescription: app.prescription,
+      }));
+
+    return res.status(200).json({
+      patient,
+      appointments,
+      prescriptions,
+    });
+  } catch (error) {
+    console.error("Get Clinic Patient Profile Error:", error);
+    return res.status(500).json({ message: "Server error fetching patient profile" });
+  }
+};
+
+// Detailed Profile for a specific doctor under this clinic
+const getClinicDoctorProfile = async (req, res) => {
+  try {
+    if (req.user.role !== "clinic") {
+      return res.status(403).json({ message: "Only clinic accounts can view doctor profiles" });
+    }
+
+    const { id } = req.params;
+    const doctor = await User.findOne({ _id: id, role: "doctor", clinicId: req.user._id }).select(
+      "-password -refreshToken -otpCode -otpExpires -inviteToken"
+    );
+
+    if (!doctor) {
+      return res.status(404).json({ message: "Doctor not found or does not belong to this clinic" });
+    }
+
+    const appointments = await Appointment.find({ doctorId: id })
+      .populate("patientId", "fullName email phone dob")
+      .sort({ date: -1, time: -1, createdAt: -1 });
+
+    const totalAppointments = appointments.length;
+    const confirmedCount = appointments.filter((a) => a.status === "Confirmed").length;
+    const completedCount = appointments.filter((a) => a.status === "Completed").length;
+    const cancelledCount = appointments.filter((a) => a.status === "Cancelled").length;
+    const attendedCount = appointments.filter((a) => a.patientAttended).length;
+    const prescriptionsCount = appointments.filter(
+      (a) => a.prescription && a.prescription.medicines && a.prescription.medicines.length > 0
+    ).length;
+
+    return res.status(200).json({
+      doctor,
+      stats: {
+        totalAppointments,
+        confirmedCount,
+        completedCount,
+        cancelledCount,
+        attendedCount,
+        prescriptionsCount,
+      },
+      appointments,
+    });
+  } catch (error) {
+    console.error("Get Clinic Doctor Profile Error:", error);
+    return res.status(500).json({ message: "Server error fetching doctor profile" });
+  }
+};
+
+// All prescriptions issued by doctors of this clinic
+const getClinicPrescriptions = async (req, res) => {
+  try {
+    if (req.user.role !== "clinic") {
+      return res.status(403).json({ message: "Only clinic accounts can view prescriptions" });
+    }
+
+    const doctors = await User.find({ role: "doctor", clinicId: req.user._id }).select("_id");
+    const doctorIds = doctors.map((d) => d._id);
+
+    const appointments = await Appointment.find({
+      $or: [{ clinicId: req.user._id }, { doctorId: { $in: doctorIds } }],
+      "prescription.medicines.0": { $exists: true },
+    })
+      .populate("patientId", "fullName email phone dob")
+      .populate("doctorId", "fullName email phone category education")
+      .sort({ date: -1, time: -1, createdAt: -1 });
+
+    return res.status(200).json(appointments);
+  } catch (error) {
+    console.error("Get Clinic Prescriptions Error:", error);
+    return res.status(500).json({ message: "Server error fetching clinic prescriptions" });
   }
 };
 
@@ -390,5 +566,9 @@ module.exports = {
   validateInviteToken,
   getClinicDoctors,
   getClinicAppointments,
+  getClinicPatients,
+  getClinicPatientProfile,
+  getClinicDoctorProfile,
+  getClinicPrescriptions,
   removeDoctor,
 };

@@ -231,6 +231,7 @@ const addPrescription = async (req, res) => {
       patientAge,
       patientSex,
       medicines,
+      tests,
       advice,
     } = req.body;
 
@@ -261,6 +262,7 @@ const addPrescription = async (req, res) => {
       rxId,
       date: dateStr,
       medicines: medicines || [],
+      tests: tests || [],
       advice: advice || "",
     };
 
@@ -310,12 +312,19 @@ const getAppointmentById = async (req, res) => {
       return res.status(404).json({ message: "Appointment not found" });
     }
     // Authorization check: patient, doctor, or clinic
-    const isAuthorized =
+    let isAuthorized =
       appointment.patientId.toString() === req.user._id.toString() ||
       appointment.doctorId.toString() === req.user._id.toString() ||
       (req.user.role === "clinic" &&
         appointment.clinicId &&
         appointment.clinicId.toString() === req.user._id.toString());
+
+    if (!isAuthorized && req.user.role === "clinic") {
+      const doctor = await User.findOne({ _id: appointment.doctorId, clinicId: req.user._id });
+      if (doctor) {
+        isAuthorized = true;
+      }
+    }
 
     if (!isAuthorized) {
       return res.status(403).json({ message: "Not authorized to view this appointment" });
@@ -343,6 +352,29 @@ const getPatientHistoryForDoctor = async (req, res) => {
   }
 };
 
+const markAppointmentAttended = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const appointment = await Appointment.findById(id);
+    if (!appointment) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    // Only the patient associated with this appointment can mark attendance
+    if (appointment.patientId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized to update this appointment" });
+    }
+
+    appointment.patientAttended = true;
+    await appointment.save();
+
+    return res.status(200).json(appointment);
+  } catch (error) {
+    console.error("Mark Appointment Attended Error:", error);
+    return res.status(500).json({ message: "Server error marking appointment as attended" });
+  }
+};
+
 module.exports = {
   createAppointment,
   getPatientAppointments,
@@ -351,4 +383,5 @@ module.exports = {
   addPrescription,
   getAppointmentById,
   getPatientHistoryForDoctor,
+  markAppointmentAttended,
 };

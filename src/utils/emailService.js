@@ -230,11 +230,32 @@ const sendPrescriptionAddedEmail = async ({ patientEmail, patientName, doctorNam
   return sendEmail({ to: patientEmail, subject, html, text });
 };
 
+const sendPasswordResetOtpEmail = async ({ to, name, otp }) => {
+  const subject = `Your Medigo Password Reset Code`;
+  const text = `Hi ${name || "there"},\n\nWe received a request to reset the password for your Medigo account.\n\nYour 6-digit verification code is: ${otp}\nThis code is valid for 15 minutes.\n\nIf you did not request this password reset, you can safely ignore this email.\n\n— Medigo`;
+  const html = `
+    <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; color: #0f172a; border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #059669; margin-top: 0;">Password Reset Request</h2>
+      <p style="font-size: 15px; line-height: 1.5; color: #334155;">Hi <strong>${name || "there"}</strong>,</p>
+      <p style="font-size: 15px; line-height: 1.5; color: #334155;">We received a request to reset your password. Use the 6-digit code below to set a new password. This code will expire in <strong>15 minutes</strong>:</p>
+      <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin: 24px 0; font-family: monospace; font-size: 32px; font-weight: 700; letter-spacing: 6px; text-align: center; color: #059669; border: 1px dashed #059669;">
+        ${otp}
+      </div>
+      <p style="font-size: 13px; line-height: 1.5; color: #64748b; margin-bottom: 0;">If you did not make this request, your account is still secure and you may safely ignore this message.</p>
+      <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+      <p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">— The Medigo team</p>
+    </div>
+  `;
+
+  return sendEmail({ to, subject, html, text });
+};
+
 module.exports = {
   sendEmail,
   sendDoctorInviteEmail,
   sendDoctorCredentialsEmail,
   sendOtpEmail,
+  sendPasswordResetOtpEmail,
   sendAppointmentCreatedEmail,
   sendAppointmentCancelledEmail,
   sendPrescriptionAddedEmail,

@@ -68,6 +68,14 @@ const appointmentSchema = new mongoose.Schema(
           instruction: { type: String, default: "" },
         }
       ],
+      tests: [
+        {
+          name: { type: String, required: true },
+          category: { type: String, default: "Diagnostic Test" },
+          instructions: { type: String, default: "" },
+          notes: { type: String, default: "" },
+        }
+      ],
       advice: { type: String, default: "" },
     },
     reminderSent: {
@@ -75,6 +83,10 @@ const appointmentSchema = new mongoose.Schema(
       default: false,
     },
     oneHourReminderSent: {
+      type: Boolean,
+      default: false,
+    },
+    patientAttended: {
       type: Boolean,
       default: false,
     },

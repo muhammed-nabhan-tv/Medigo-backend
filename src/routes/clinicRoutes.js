@@ -8,6 +8,10 @@ const {
   validateInviteToken,
   getClinicDoctors,
   getClinicAppointments,
+  getClinicPatients,
+  getClinicPatientProfile,
+  getClinicDoctorProfile,
+  getClinicPrescriptions,
   removeDoctor,
 } = require("../controllers/clinicController");
 const authenticateJWT = require("../middlewares/authMiddleware");
@@ -23,7 +27,11 @@ router.post("/set-password", setDoctorPassword);
 // Clinic-protected
 router.post("/doctors", authenticateJWT, inviteDoctor);
 router.get("/doctors", authenticateJWT, getClinicDoctors);
+router.get("/doctors/:id", authenticateJWT, getClinicDoctorProfile);
 router.delete("/doctors/:id", authenticateJWT, removeDoctor);
 router.get("/appointments", authenticateJWT, getClinicAppointments);
+router.get("/patients", authenticateJWT, getClinicPatients);
+router.get("/patients/:id", authenticateJWT, getClinicPatientProfile);
+router.get("/prescriptions", authenticateJWT, getClinicPrescriptions);
 
 module.exports = router;

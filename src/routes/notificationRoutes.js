@@ -2,55 +2,89 @@ const express = require("express");
 const router = express.Router();
 const authenticateJWT = require("../middlewares/authMiddleware");
 const Notification = require("../models/Notification");
-const { registerClient, removeClient } = require("../utils/notificationService");
-const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const PushSubscription = require("../models/PushSubscription");
+const { publicKey } = require("../config/vapid");
+const { sendWebPushToUser } = require("../utils/notificationService");
 
-// 1. Establish SSE live notifications stream connection
-// We use the query parameter ?token=... for authentication since EventSource doesn't support custom headers.
-router.get("/stream", async (req, res) => {
-  const token = req.query.token;
-  if (!token) {
-    return res.status(401).json({ message: "Access denied. Token is missing." });
-  }
+// 1. Get VAPID Public Key for Web Push (Public)
+router.get("/vapid-public-key", (req, res) => {
+  return res.status(200).json({ publicKey });
+});
 
+// 2. Register / Update a Web Push subscription
+router.post("/subscribe", authenticateJWT, async (req, res) => {
   try {
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
+    const { subscription, userAgent } = req.body;
 
-    if (!user) {
-      return res.status(404).json({ message: "Access denied. User not found." });
+    if (!subscription || !subscription.endpoint || !subscription.keys) {
+      return res.status(400).json({ message: "Invalid push subscription object" });
     }
 
-    if (!user.isVerified) {
-      return res.status(403).json({ message: "Access denied. Account is not verified." });
+    const { endpoint, keys } = subscription;
+    if (!keys.p256dh || !keys.auth) {
+      return res.status(400).json({ message: "Subscription missing cryptographic keys" });
     }
 
-    // Configure headers for EventStream
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*", // ensure CORS works for cross-origin local hosts
-    });
+    // Upsert subscription for user and endpoint
+    const existingSub = await PushSubscription.findOneAndUpdate(
+      { endpoint },
+      {
+        userId: req.user._id,
+        endpoint,
+        keys: {
+          p256dh: keys.p256dh,
+          auth: keys.auth,
+        },
+        userAgent: userAgent || "",
+      },
+      { upsert: true, new: true }
+    );
 
-    // Send connection established event
-    res.write("event: ping\ndata: connection established\n\n");
-
-    const userId = user._id;
-    registerClient(userId, res);
-
-    // Clean up on client disconnect
-    req.on("close", () => {
-      removeClient(userId, res);
+    return res.status(200).json({
+      message: "Push notification subscription registered successfully",
+      subscriptionId: existingSub._id,
     });
   } catch (error) {
-    console.error("SSE stream authentication error:", error);
-    return res.status(401).json({ message: "Access denied. Invalid token." });
+    console.error("Push subscribe error:", error);
+    return res.status(500).json({ message: "Server error registering push subscription" });
   }
 });
 
-// 2. Get user's notifications (recent 50)
+// 3. Unregister a Web Push subscription
+router.post("/unsubscribe", authenticateJWT, async (req, res) => {
+  try {
+    const { endpoint } = req.body;
+    if (!endpoint) {
+      return res.status(400).json({ message: "Endpoint required" });
+    }
+
+    await PushSubscription.deleteOne({ endpoint, userId: req.user._id });
+    return res.status(200).json({ message: "Push notification subscription removed" });
+  } catch (error) {
+    console.error("Push unsubscribe error:", error);
+    return res.status(500).json({ message: "Server error removing push subscription" });
+  }
+});
+
+// 4. Send a test push notification to user's registered devices
+router.post("/test", authenticateJWT, async (req, res) => {
+  try {
+    await sendWebPushToUser(req.user._id, {
+      title: "Medigo Health Alert",
+      body: "Test notification: Web Push is connected and working seamlessly!",
+      type: "general",
+      link: "/profile",
+      id: "test-" + Date.now(),
+    });
+
+    return res.status(200).json({ message: "Test push notification sent to your devices!" });
+  } catch (error) {
+    console.error("Test push error:", error);
+    return res.status(500).json({ message: "Failed to dispatch test push notification" });
+  }
+});
+
+// 5. Get user's notifications (recent 50)
 router.get("/", authenticateJWT, async (req, res) => {
   try {
     const notifications = await Notification.find({ userId: req.user._id })
@@ -63,7 +97,7 @@ router.get("/", authenticateJWT, async (req, res) => {
   }
 });
 
-// 3. Mark all user's notifications as read
+// 6. Mark all user's notifications as read
 router.put("/mark-read", authenticateJWT, async (req, res) => {
   try {
     await Notification.updateMany({ userId: req.user._id, isRead: false }, { isRead: true });
@@ -74,7 +108,7 @@ router.put("/mark-read", authenticateJWT, async (req, res) => {
   }
 });
 
-// 4. Mark a specific notification as read
+// 7. Mark a specific notification as read
 router.put("/:id/mark-read", authenticateJWT, async (req, res) => {
   try {
     const notification = await Notification.findOneAndUpdate(

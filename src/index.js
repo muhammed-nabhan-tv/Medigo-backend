@@ -6,7 +6,12 @@ const authRoutes = require("./routes/authRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
 const clinicRoutes = require("./routes/clinicRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const chatRoutes = require("./routes/chatRoutes");
+const medicalRoutes = require("./routes/medicalRoutes");
 const { startReminderScheduler } = require("./utils/reminderScheduler");
+
+const http = require("http");
+const { initSocket } = require("./config/socket");
 
 // Connect to MongoDB Database
 connectDB().then(() => {
@@ -15,6 +20,10 @@ connectDB().then(() => {
 });
 
 const app = express();
+const server = http.createServer(app);
+
+// Initialize Socket.IO
+initSocket(server);
 
 // Set Up Global Middlewares
 app.use(
@@ -30,6 +39,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/clinic", clinicRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/medical", medicalRoutes);
 
 // Health check endpoint
 app.get("/", (req, res) => {
@@ -38,6 +49,7 @@ app.get("/", (req, res) => {
 
 // Listening
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Express server running on port ${PORT}`);
 });
+

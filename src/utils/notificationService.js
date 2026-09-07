@@ -1,40 +1,13 @@
 const Notification = require("../models/Notification");
-
-// Map of userId string -> array of Express response objects
-const sseClients = new Map();
-
-/**
- * Register a client for SSE streams
- */
-const registerClient = (userId, res) => {
-  const userIdStr = userId.toString();
-  if (!sseClients.has(userIdStr)) {
-    sseClients.set(userIdStr, []);
-  }
-  sseClients.get(userIdStr).push(res);
-  console.log(`[Notification Service] Registered SSE client for user ${userIdStr}. Active connections: ${sseClients.get(userIdStr).length}`);
-};
+const PushSubscription = require("../models/PushSubscription");
+const { getIO } = require("../config/socket");
+const { webpush } = require("../config/vapid");
 
 /**
- * Remove a client from SSE streams
- */
-const removeClient = (userId, res) => {
-  const userIdStr = userId.toString();
-  if (sseClients.has(userIdStr)) {
-    const clients = sseClients.get(userIdStr);
-    const index = clients.indexOf(res);
-    if (index !== -1) {
-      clients.splice(index, 1);
-    }
-    if (clients.length === 0) {
-      sseClients.delete(userIdStr);
-    }
-    console.log(`[Notification Service] Unregistered SSE client for user ${userIdStr}. Remaining connections: ${clients ? clients.length : 0}`);
-  }
-};
-
-/**
- * Send a notification to a specific user (saves to DB and pushes via SSE if online)
+ * Send a notification to a specific user:
+ * 1. Saves to DB
+ * 2. Emits via Socket.IO if client is online
+ * 3. Sends Web Push Notification to all subscribed devices
  */
 const createAndSendNotification = async ({ userId, title, message, type, link }) => {
   try {
@@ -47,17 +20,27 @@ const createAndSendNotification = async ({ userId, title, message, type, link })
       link: link || null,
     });
 
-    // 2. Push via SSE if online
+    // 2. Push via Socket.IO
     const userIdStr = userId.toString();
-    if (sseClients.has(userIdStr)) {
-      const clients = sseClients.get(userIdStr);
-      const dataStr = JSON.stringify(notification);
-      clients.forEach((res) => {
-        // SSE formatting requires data: followed by JSON and double newline
-        res.write(`event: notification\n`);
-        res.write(`data: ${dataStr}\n\n`);
+    try {
+      const io = getIO();
+      io.to(`user_${userIdStr}`).emit("notification", notification);
+      console.log(`[Notification Service] Successfully pushed live Socket.IO notification to user ${userIdStr}`);
+    } catch (socketErr) {
+      console.log(`[Notification Service] Socket.IO emit note: ${socketErr.message}`);
+    }
+
+    // 3. Send Web Push Notification to active device subscriptions
+    try {
+      await sendWebPushToUser(userId, {
+        title,
+        body: message,
+        type: type || "general",
+        link: link || "/profile",
+        id: notification._id.toString(),
       });
-      console.log(`[Notification Service] Successfully pushed live SSE notification to user ${userIdStr}`);
+    } catch (pushErr) {
+      console.error(`[Notification Service] Web Push error for user ${userIdStr}:`, pushErr.message);
     }
 
     return notification;
@@ -66,8 +49,53 @@ const createAndSendNotification = async ({ userId, title, message, type, link })
   }
 };
 
+/**
+ * Dispatches Web Push payload to all PushSubscriptions registered by the user
+ */
+const sendWebPushToUser = async (userId, payload) => {
+  const subscriptions = await PushSubscription.find({ userId });
+  if (!subscriptions || subscriptions.length === 0) {
+    return;
+  }
+
+  const payloadString = JSON.stringify({
+    title: payload.title || "Medigo Health Alert",
+    body: payload.body || "You have a new update from Medigo.",
+    icon: "/favicon.ico",
+    badge: "/favicon.ico",
+    data: {
+      url: payload.link || "/profile",
+      type: payload.type || "general",
+      notificationId: payload.id,
+    },
+  });
+
+  const sendPromises = subscriptions.map(async (sub) => {
+    try {
+      const pushConfig = {
+        endpoint: sub.endpoint,
+        keys: {
+          p256dh: sub.keys.p256dh,
+          auth: sub.keys.auth,
+        },
+      };
+
+      await webpush.sendNotification(pushConfig, payloadString);
+      console.log(`[Web Push] Successfully delivered push to endpoint: ${sub.endpoint.slice(0, 30)}...`);
+    } catch (err) {
+      console.error(`[Web Push] Delivery failed for endpoint:`, err.statusCode || err.message);
+      // Clean up invalid or expired subscriptions (410 Gone, 404 Not Found)
+      if (err.statusCode === 410 || err.statusCode === 404) {
+        console.log(`[Web Push] Removing expired subscription ${sub._id}`);
+        await PushSubscription.deleteOne({ _id: sub._id });
+      }
+    }
+  });
+
+  await Promise.allSettled(sendPromises);
+};
+
 module.exports = {
-  registerClient,
-  removeClient,
   createAndSendNotification,
+  sendWebPushToUser,
 };

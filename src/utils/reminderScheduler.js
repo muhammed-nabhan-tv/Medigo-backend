@@ -163,9 +163,10 @@ const closeExpiredAppointments = async () => {
   try {
     const now = new Date();
     
-    // Find all appointments that are Confirmed or Pending
+    // Find all appointments that are Confirmed or Pending and patient did NOT attend
     const appointments = await Appointment.find({
       status: { $in: ["Confirmed", "Pending"] },
+      patientAttended: { $ne: true },
     });
 
     if (appointments.length === 0) return;
@@ -178,7 +179,7 @@ const closeExpiredAppointments = async () => {
       // Check if the appointment start time is in the past (with a 30-minute grace period buffer)
       const expiryTime = new Date(appDateTime.getTime() + 30 * 60 * 1000); 
       if (now > expiryTime) {
-        console.log(`[Reminder Scheduler] Closing expired appointment ID: ${app._id} (with Dr. ${app.doctorName} for patient ${app.patientName})`);
+        console.log(`[Reminder Scheduler] Closing expired unattended appointment ID: ${app._id} (with Dr. ${app.doctorName} for patient ${app.patientName})`);
         
         app.status = "Cancelled";
         await app.save();
@@ -188,16 +189,16 @@ const closeExpiredAppointments = async () => {
         try {
           await createAndSendNotification({
             userId: app.patientId,
-            title: "Appointment Closed",
-            message: `Your appointment with Dr. ${app.doctorName} on ${app.date} at ${app.time} has been automatically closed/cancelled as the time has passed.`,
+            title: "Appointment Auto-Cancelled",
+            message: `Your appointment with Dr. ${app.doctorName} on ${app.date} at ${app.time} has been automatically cancelled because the scheduled time has passed and you did not attend.`,
             type: "appointment_cancelled",
             link: "/profile",
           });
 
           await createAndSendNotification({
             userId: app.doctorId,
-            title: "Appointment Closed",
-            message: `The appointment with ${app.patientName} scheduled for ${app.date} at ${app.time} has been automatically closed/cancelled as the time has passed.`,
+            title: "Appointment Auto-Cancelled",
+            message: `The appointment with ${app.patientName} scheduled for ${app.date} at ${app.time} has been automatically cancelled because the patient did not attend.`,
             type: "appointment_cancelled",
             link: "/doctor",
           });
@@ -208,7 +209,7 @@ const closeExpiredAppointments = async () => {
     }
 
     if (closedCount > 0) {
-      console.log(`[Reminder Scheduler] Automatically closed ${closedCount} expired appointments.`);
+      console.log(`[Reminder Scheduler] Automatically closed/cancelled ${closedCount} expired unattended appointments.`);
     }
   } catch (error) {
     console.error("[Reminder Scheduler] Error executing auto-close check:", error);

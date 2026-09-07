@@ -8,6 +8,7 @@ const {
   addPrescription,
   getAppointmentById,
   getPatientHistoryForDoctor,
+  markAppointmentAttended,
 } = require("../controllers/appointmentController");
 const authenticateJWT = require("../middlewares/authMiddleware");
 
@@ -20,6 +21,7 @@ router.get("/doctor", getDoctorAppointments);
 router.get("/patient-history/:patientId", getPatientHistoryForDoctor);
 router.get("/:id", getAppointmentById);
 router.put("/:id/status", updateAppointmentStatus);
+router.put("/:id/attend", markAppointmentAttended);
 router.put("/:id/prescription", addPrescription);
 
 module.exports = router;
