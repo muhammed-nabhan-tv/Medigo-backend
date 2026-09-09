@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Appointment = require("../models/Appointment");
 const User = require("../models/User");
 const { sendEmail } = require("./emailService");
@@ -37,6 +38,11 @@ const parseAppointmentDateTime = (dateStr, timeStr) => {
  */
 const checkUpcomingAppointments = async () => {
   try {
+    // Guard: ensure database is connected before querying
+    if (mongoose.connection.readyState !== 1) {
+      return;
+    }
+
     const now = new Date();
     const twentyFourHoursLater = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
@@ -161,6 +167,11 @@ const checkUpcomingAppointments = async () => {
  */
 const closeExpiredAppointments = async () => {
   try {
+    // Guard: ensure database is connected before querying
+    if (mongoose.connection.readyState !== 1) {
+      return;
+    }
+
     const now = new Date();
     
     // Find all appointments that are Confirmed or Pending and patient did NOT attend
@@ -222,6 +233,11 @@ const closeExpiredAppointments = async () => {
  */
 const checkOneHourReminders = async () => {
   try {
+    // Guard: ensure database is connected before querying
+    if (mongoose.connection.readyState !== 1) {
+      return;
+    }
+
     const now = new Date();
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
 
@@ -298,13 +314,18 @@ const checkOneHourReminders = async () => {
  * Start the cron scheduler for checking upcoming appointments
  */
 const startReminderScheduler = () => {
-  // Check immediately upon server startup
-  checkUpcomingAppointments();
-  closeExpiredAppointments();
-  checkOneHourReminders();
+  // Only execute initial check if database is already connected
+  if (mongoose.connection.readyState === 1) {
+    checkUpcomingAppointments();
+    closeExpiredAppointments();
+    checkOneHourReminders();
+  }
   
   // Schedule a cron job to run every 5 minutes
   cron.schedule("*/5 * * * *", () => {
+    if (mongoose.connection.readyState !== 1) {
+      return;
+    }
     console.log("[Reminder Scheduler] Running scheduled checks for upcoming, expired, and 1-hour reminder consultations...");
     checkUpcomingAppointments();
     closeExpiredAppointments();
