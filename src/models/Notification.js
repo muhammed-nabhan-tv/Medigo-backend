@@ -23,6 +23,8 @@ const notificationSchema = new mongoose.Schema(
         "appointment_confirmed",
         "appointment_completed",
         "prescription_added",
+        "test_report_uploaded",
+        "test_report_reviewed",
         "reminder",
         "general"
       ],

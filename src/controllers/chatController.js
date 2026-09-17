@@ -221,126 +221,188 @@ const analyzeSymptomsAndFAQs = (msgLower, doctors) => {
 
     // Check for reset / restart
     if (msgLower.includes("reset") || msgLower.includes("restart") || msgLower.includes("start over")) {
-    return {
-      message: `Welcome back! I am Medigo's AI Health & Booking Assistant.\n\nHow can I help you today? You can describe symptoms, ask health questions, or choose a specialty below to book an appointment!`,
-      bookingDetails: {
-        doctorId: null,
-        date: null,
-        time: null,
-        type: "Video Consultation",
-        reason: "General Checkup"
-      },
-      bookingReady: false,
-      options: ["Check Symptoms", "General Medicine", "Cardiologist", "Dermatologist", "Pediatrician", "Neurologist"]
-    };
-  }
-
-  // Step 1: Doctor selection if not yet set
-  if (!state.doctorId) {
-    // Check for symptom analysis or FAQ match
-    const symptomAnalysis = analyzeSymptomsAndFAQs(msgLower, doctors);
-    if (symptomAnalysis) {
-      if (symptomAnalysis.type === "emergency" || symptomAnalysis.type === "faq") {
-        return {
-          message: symptomAnalysis.message,
-          bookingDetails: state,
-          bookingReady: false,
-          suggestedActions: symptomAnalysis.suggestedActions
-        };
-      }
-
-      if (symptomAnalysis.type === "symptom") {
-        state.reason = symptomAnalysis.specialty;
-        const matchingDocs = symptomAnalysis.doctors && symptomAnalysis.doctors.length > 0
-          ? symptomAnalysis.doctors
-          : doctors;
-
-        return {
-          message: `${symptomAnalysis.message}\n\nHere are our active practitioners ready for consultation:`,
-          bookingDetails: state,
-          bookingReady: false,
-          doctorCards: matchingDocs.map(d => ({
-            id: d._id.toString(),
-            name: d.fullName,
-            category: d.category || "General Medicine",
-            education: d.education || "Certified Specialist",
-            experience: d.experience || 10,
-            rating: d.rating || 4.9,
-            availableDays: d.availableDays || ["Monday", "Wednesday", "Friday"],
-            availableSlots: d.availableSlots || ["09:00 AM", "10:00 AM", "02:00 PM"]
-          })),
-          suggestedActions: matchingDocs.map(d => `Select Dr. ${d.fullName}`)
-        };
-      }
-    }
-
-    // Check if user mentioned a doctor's name
-    const matchedDoc = doctors.find(doc => {
-      const nameParts = doc.fullName.toLowerCase().replace("dr.", "").replace("md", "").replace("phd", "").replace(",", "").trim().split(" ");
-      return nameParts.some(part => part.length > 2 && msgLower.includes(part));
-    });
-
-    if (matchedDoc) {
-      state.doctorId = matchedDoc._id.toString();
-      state.reason = matchedDoc.category || "General Checkup";
-      const upcomingDates = getUpcomingAvailableDates(matchedDoc.availableDays);
+      const allCategories = Array.from(new Set(doctors.map(d => d.category).filter(Boolean)));
       return {
-        message: `Great choice! I have selected **Dr. ${matchedDoc.fullName}** (${matchedDoc.category}).\n\nAvailable days: **${matchedDoc.availableDays.join(", ")}**.\n\nPlease select an upcoming date:`,
-        bookingDetails: state,
+        message: `Welcome back! I am Medigo's AI Health & Booking Assistant. 🏥✨\n\nHow can I help you today? You can view all doctors, search by category, or click **'⚡ Book Instantly'** on any doctor!`,
+        bookingDetails: {
+          doctorId: null,
+          date: null,
+          time: null,
+          type: "Video Consultation",
+          reason: "General Checkup"
+        },
         bookingReady: false,
-        availableDates: upcomingDates,
-        options: upcomingDates.map(d => d.date)
+        options: ["👨‍⚕️ View All Doctors", ...allCategories.slice(0, 5)]
       };
     }
 
-    // Check if user mentioned a specialty
-    const specialties = ["General Medicine", "Pediatrics", "Cardiology", "Dermatology", "Neurology"];
-    const matchedSpecialty = specialties.find(spec =>
-      msgLower.includes(spec.toLowerCase()) ||
-      (spec === "General Medicine" && (msgLower.includes("general") || msgLower.includes("physician")))
-    );
+    const allCategories = Array.from(new Set(doctors.map(d => d.category).filter(Boolean)));
+    if (allCategories.length === 0) {
+      allCategories.push("General Medicine", "Cardiology", "Dermatology", "Pediatrics", "Neurology");
+    }
 
-    if (matchedSpecialty) {
-      const matchingDocs = doctors.filter(d => d.category === matchedSpecialty);
-      if (matchingDocs.length === 1) {
-        state.doctorId = matchingDocs[0]._id.toString();
-        state.reason = matchedSpecialty;
-        const upcomingDates = getUpcomingAvailableDates(matchingDocs[0].availableDays);
+    // Step 1: Doctor selection if not yet set
+    if (!state.doctorId) {
+      // Feature 1: Get all doctors
+      if (
+        msgLower === "all doctors" ||
+        msgLower === "doctors" ||
+        msgLower.includes("all doctor") ||
+        msgLower.includes("get all doctor") ||
+        msgLower.includes("show all doctor") ||
+        msgLower.includes("list all doctor") ||
+        msgLower.includes("view all doctor") ||
+        msgLower.includes("see all doctor") ||
+        msgLower.includes("available doctor") ||
+        msgLower.includes("find doctor") ||
+        msgLower.includes("who are your doctor")
+      ) {
         return {
-          message: `For **${matchedSpecialty}**, I have selected **Dr. ${matchingDocs[0].fullName}**.\n\nAvailable days: **${matchingDocs[0].availableDays.join(", ")}**.\n\nWhich upcoming date works for you?`,
+          message: `👨‍⚕️ **Verified Medical Practitioners on Medigo** (${doctors.length} available):\n\nHere are all our certified practitioners across all departments. You can click **'⚡ Book Instantly'** on any doctor below to schedule your consultation:`,
+          bookingDetails: state,
+          bookingReady: false,
+          doctorCards: doctors.map(d => ({
+            id: d._id.toString(),
+            name: d.fullName,
+            category: d.category || "General Medicine",
+            education: d.education || "Certified Medical Specialist",
+            experience: d.experience || 5,
+            rating: d.rating || 4.9,
+            availableDays: d.availableDays || ["Monday", "Wednesday", "Friday"],
+            availableSlots: d.availableSlots || ["09:00 AM", "10:00 AM", "02:00 PM"],
+            upcomingDates: getUpcomingAvailableDates(d.availableDays)
+          })),
+          options: allCategories
+        };
+      }
+
+      // Feature 2A: Query for categories list
+      if (
+        msgLower === "categories" ||
+        msgLower === "category" ||
+        msgLower.includes("show categories") ||
+        msgLower.includes("all categories") ||
+        msgLower.includes("specialties") ||
+        msgLower.includes("departments")
+      ) {
+        return {
+          message: `🏷️ **Available Medical Specialties on Medigo**:\n\nWe have verified specialists in the following departments:\n${allCategories.map(c => `• **${c}**`).join("\n")}\n\nSelect or enter a category below to see doctors:`,
+          bookingDetails: state,
+          bookingReady: false,
+          options: allCategories
+        };
+      }
+
+      // Feature 2B: Enter category and get doctor
+      const matchedCategory = allCategories.find(cat => {
+        const c = cat.toLowerCase();
+        return msgLower === c ||
+               msgLower.includes(c) ||
+               c.includes(msgLower) ||
+               (c.includes("cardio") && msgLower.includes("cardio")) ||
+               (c.includes("derma") && msgLower.includes("derma")) ||
+               (c.includes("pediatric") && (msgLower.includes("pediatric") || msgLower.includes("child") || msgLower.includes("baby"))) ||
+               (c.includes("neuro") && msgLower.includes("neuro")) ||
+               (c.includes("general") && (msgLower.includes("general") || msgLower.includes("physician") || msgLower.includes("internal")));
+      });
+
+      if (matchedCategory) {
+        const matchingDocs = doctors.filter(d => {
+          const docCat = (d.category || "").toLowerCase();
+          const target = matchedCategory.toLowerCase();
+          return docCat.includes(target) || target.includes(docCat) ||
+                 (target.includes("general") && (docCat.includes("general") || docCat.includes("medicine")));
+        });
+
+        if (matchingDocs.length > 0) {
+          return {
+            message: `🩺 **Doctors in ${matchedCategory}** (${matchingDocs.length} available):\n\nHere are our active specialists in **${matchedCategory}**. Click **'⚡ Book Instantly'** on any doctor below to choose a date and slot:`,
+            bookingDetails: {
+              ...state,
+              reason: matchedCategory
+            },
+            bookingReady: false,
+            doctorCards: matchingDocs.map(d => ({
+              id: d._id.toString(),
+              name: d.fullName,
+              category: d.category || matchedCategory,
+              education: d.education || "Certified Specialist",
+              experience: d.experience || 5,
+              rating: d.rating || 4.9,
+              availableDays: d.availableDays || ["Monday", "Wednesday", "Friday"],
+              availableSlots: d.availableSlots || ["09:00 AM", "10:00 AM", "02:00 PM"],
+              upcomingDates: getUpcomingAvailableDates(d.availableDays)
+            })),
+            options: allCategories.filter(c => c !== matchedCategory)
+          };
+        }
+      }
+
+      // Check for symptom analysis or FAQ match
+      const symptomAnalysis = analyzeSymptomsAndFAQs(msgLower, doctors);
+      if (symptomAnalysis) {
+        if (symptomAnalysis.type === "emergency" || symptomAnalysis.type === "faq") {
+          return {
+            message: symptomAnalysis.message,
+            bookingDetails: state,
+            bookingReady: false,
+            suggestedActions: symptomAnalysis.suggestedActions
+          };
+        }
+
+        if (symptomAnalysis.type === "symptom") {
+          state.reason = symptomAnalysis.specialty;
+          const matchingDocs = symptomAnalysis.doctors && symptomAnalysis.doctors.length > 0
+            ? symptomAnalysis.doctors
+            : doctors;
+
+          return {
+            message: `${symptomAnalysis.message}\n\nHere are our active practitioners ready for consultation:`,
+            bookingDetails: state,
+            bookingReady: false,
+            doctorCards: matchingDocs.map(d => ({
+              id: d._id.toString(),
+              name: d.fullName,
+              category: d.category || "General Medicine",
+              education: d.education || "Certified Specialist",
+              experience: d.experience || 10,
+              rating: d.rating || 4.9,
+              availableDays: d.availableDays || ["Monday", "Wednesday", "Friday"],
+              availableSlots: d.availableSlots || ["09:00 AM", "10:00 AM", "02:00 PM"],
+              upcomingDates: getUpcomingAvailableDates(d.availableDays)
+            })),
+            suggestedActions: matchingDocs.map(d => `Select Dr. ${d.fullName}`)
+          };
+        }
+      }
+
+      // Check if user mentioned a doctor's name
+      const matchedDoc = doctors.find(doc => {
+        const nameParts = doc.fullName.toLowerCase().replace("dr.", "").replace("md", "").replace("phd", "").replace(",", "").trim().split(" ");
+        return nameParts.some(part => part.length > 2 && msgLower.includes(part));
+      });
+
+      if (matchedDoc) {
+        state.doctorId = matchedDoc._id.toString();
+        state.reason = matchedDoc.category || "General Checkup";
+        const upcomingDates = getUpcomingAvailableDates(matchedDoc.availableDays);
+        return {
+          message: `Great choice! I have selected **Dr. ${matchedDoc.fullName}** (${matchedDoc.category}).\n\nAvailable days: **${matchedDoc.availableDays.join(", ")}**.\n\nPlease select an upcoming date:`,
           bookingDetails: state,
           bookingReady: false,
           availableDates: upcomingDates,
           options: upcomingDates.map(d => d.date)
         };
-      } else if (matchingDocs.length > 1) {
-        return {
-          message: `Here are our verified specialists in **${matchedSpecialty}**. Which practitioner would you like to schedule with?`,
-          bookingDetails: state,
-          bookingReady: false,
-          doctorCards: matchingDocs.map(d => ({
-            id: d._id.toString(),
-            name: d.fullName,
-            category: d.category,
-            education: d.education,
-            experience: d.experience,
-            rating: d.rating,
-            availableDays: d.availableDays,
-            availableSlots: d.availableSlots
-          })),
-          suggestedActions: matchingDocs.map(d => `Dr. ${d.fullName}`)
-        };
       }
-    }
 
-    // Default welcome greeting with active doctor directory preview
-    return {
-      message: `Hello ${patient.fullName || "there"}! I'm Medigo's AI Health & Booking Assistant. 🏥\n\nI can assist you with:\n• **Symptom guidance & clinical triage**\n• **Finding verified doctors by specialty**\n• **Instant appointment scheduling**\n\nWhat symptoms are you experiencing, or what specialty are you looking for?`,
-      bookingDetails: state,
-      bookingReady: false,
-      options: ["Check Symptoms", "General Medicine", "Cardiology", "Dermatology", "Pediatrics", "Neurology"]
-    };
-  }
+      // Default welcome greeting with active doctor directory preview
+      return {
+        message: `Hello ${patient.fullName || "there"}! I'm Medigo's AI Health & Booking Assistant. 🏥\n\nI can assist you with:\n• **👨‍⚕️ Viewing all available doctors**\n• **🏷️ Finding specialists by category**\n• **⚡ Instant 1-click appointment booking**\n\nWhat would you like to do?`,
+        bookingDetails: state,
+        bookingReady: false,
+        options: ["👨‍⚕️ View All Doctors", ...allCategories.slice(0, 4)]
+      };
+    }
 
   const currentDoc = getSelectedDoc();
   if (!currentDoc) {
@@ -488,19 +550,118 @@ const analyzeSymptomsAndFAQs = (msgLower, doctors) => {
 // Main controller endpoint
 const bookingChat = async (req, res) => {
   try {
-    const { message, history, bookingDetails } = req.body;
+    const { message, history, bookingDetails, action, doctorId: directDoctorId, date: directDate, time: directTime, type: directType, reason: directReason } = req.body;
     const user = req.user;
     const isGuest = !user;
     const patient = user ? user : { fullName: "Guest Patient", isGuest: true };
 
+    // Resolve verified active practitioners
+    const doctors = await User.find({ role: "doctor", isVerified: true }).select(
+      "fullName email role category availableDays availableSlots education experience rating clinicId"
+    );
+
+    // Feature 3: Direct 1-Click Instant Booking Action from Chat Widget
+    if (action === "instant_book") {
+      const docId = directDoctorId || bookingDetails?.doctorId;
+      const bDate = directDate || bookingDetails?.date;
+      const bTime = directTime || bookingDetails?.time;
+      const bType = directType || bookingDetails?.type || "Video Consultation";
+      const bReason = directReason || bookingDetails?.reason || "General Checkup";
+
+      if (!docId || !bDate || !bTime) {
+        return res.status(400).json({ message: "Doctor, date, and time slot are required to complete your booking." });
+      }
+
+      const doctor = doctors.find(d => d._id.toString() === docId) || await User.findById(docId);
+      if (!doctor || (doctor.role && doctor.role !== "doctor")) {
+        return res.status(404).json({ message: "Selected doctor could not be found." });
+      }
+
+      if (isGuest) {
+        return res.json({
+          message: `🎉 Your appointment slot with **Dr. ${doctor.fullName}** (${doctor.category || "Specialist"}) on **${bDate} at ${bTime}** is ready!\n\nPlease **Sign In** or create an account to finalize and lock in this appointment on your calendar.`,
+          requiresAuth: true,
+          bookingReady: false,
+          bookingDetails: {
+            doctorId: docId,
+            date: bDate,
+            time: bTime,
+            type: bType,
+            reason: bReason,
+          }
+        });
+      }
+
+      // Create appointment entry
+      const appointment = await Appointment.create({
+        patientId: user._id,
+        doctorId: docId,
+        clinicId: doctor.clinicId || null,
+        doctorName: doctor.fullName,
+        specialty: doctor.category || "General Medicine",
+        patientName: user.fullName,
+        date: bDate,
+        time: bTime,
+        type: bType,
+        reason: bReason,
+        status: "Confirmed",
+      });
+
+      // Send email notifications
+      try {
+        await sendAppointmentCreatedEmail({
+          patientEmail: user.email,
+          patientName: user.fullName,
+          doctorEmail: doctor.email,
+          doctorName: doctor.fullName,
+          date: appointment.date,
+          time: appointment.time,
+          type: appointment.type
+        });
+      } catch (emailErr) {
+        console.error("Failed to send appointment confirmation emails:", emailErr.message);
+      }
+
+      // Trigger live in-app and Web Push notifications
+      try {
+        await createAndSendNotification({
+          userId: user._id,
+          title: "Appointment Booked via Medigo Carebot",
+          message: `Your consultation with Dr. ${doctor.fullName} on ${bDate} at ${bTime} is confirmed.`,
+          type: "appointment_confirmed",
+          link: "/profile",
+        });
+
+        await createAndSendNotification({
+          userId: docId,
+          title: "New Appointment Booked",
+          message: `${user.fullName} has booked a consultation with you on ${bDate} at ${bTime}.`,
+          type: "appointment_created",
+          link: "/doctor",
+        });
+      } catch (notifErr) {
+        console.error("Failed to send in-app and push notifications:", notifErr.message);
+      }
+
+      return res.json({
+        message: `🎉 **Appointment Confirmed!**\n\n• **Practitioner**: Dr. ${doctor.fullName} (${doctor.category || "Specialist"})\n• **Date**: ${bDate}\n• **Time**: ${bTime}\n• **Consultation Mode**: ${bType}\n• **Reason**: ${bReason}\n\nYour consultation is confirmed in the database! A live notification has been sent to Dr. ${doctor.fullName}. You can view and manage this appointment anytime in your Profile.`,
+        bookingConfirmed: true,
+        bookingReady: true,
+        appointment,
+        bookingDetails: {
+          doctorId: docId,
+          date: bDate,
+          time: bTime,
+          type: bType,
+          reason: bReason,
+        },
+        options: ["View My Appointments", "👨‍⚕️ View All Doctors"]
+      });
+    }
+
     if (!message) {
       return res.status(400).json({ message: "Message content is required" });
     }
-
-    // Resolve verified active practitioners
-    const doctors = await User.find({ role: "doctor", isVerified: true }).select(
-      "fullName email category availableDays availableSlots education experience rating"
-    );
 
     let chatResponse;
     const hasApiKey = !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "YOUR_GEMINI_API_KEY";

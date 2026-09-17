@@ -13,10 +13,14 @@ const {
   getClinicDoctorProfile,
   getClinicPrescriptions,
   removeDoctor,
+  getClinicProfile,
+  updateClinicProfile,
+  getAllClinics,
 } = require("../controllers/clinicController");
 const authenticateJWT = require("../middlewares/authMiddleware");
 
-// Public clinic auth
+// Public clinic endpoints
+router.get("/", getAllClinics);
 router.post("/register", registerClinic);
 router.post("/login", loginClinic);
 
@@ -24,7 +28,9 @@ router.post("/login", loginClinic);
 router.get("/invite/validate", validateInviteToken);
 router.post("/set-password", setDoctorPassword);
 
-// Clinic-protected
+// Clinic-protected profile & management
+router.get("/profile", authenticateJWT, getClinicProfile);
+router.put("/profile", authenticateJWT, updateClinicProfile);
 router.post("/doctors", authenticateJWT, inviteDoctor);
 router.get("/doctors", authenticateJWT, getClinicDoctors);
 router.get("/doctors/:id", authenticateJWT, getClinicDoctorProfile);

@@ -63,6 +63,40 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // Clinic / Doctor physical address & location details
+    address: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    location: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    city: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    state: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    pincode: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    latitude: {
+      type: Number,
+      default: null,
+    },
+    longitude: {
+      type: Number,
+      default: null,
+    },
     // Doctor invite / password-set flow
     inviteToken: {
       type: String,
@@ -96,6 +130,29 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: ["09:00 AM", "10:00 AM", "11:30 AM", "01:30 PM", "02:00 PM", "03:30 PM", "04:30 PM"],
     },
+    weeklySchedule: [
+      {
+        day: { type: String, required: true },
+        isActive: { type: Boolean, default: true },
+        startTime: { type: String, default: "10:00 AM" },
+        endTime: { type: String, default: "03:00 PM" },
+        consultationDuration: { type: Number, default: 15 },
+        breaks: [
+          {
+            startTime: { type: String, default: "12:30 PM" },
+            endTime: { type: String, default: "01:00 PM" },
+          },
+        ],
+        tokens: [
+          {
+            tokenNumber: { type: Number, required: true },
+            startTime: { type: String, required: true },
+            endTime: { type: String, required: true },
+            displayTime: { type: String, required: true },
+          },
+        ],
+      },
+    ],
   },
   {
     timestamps: true,

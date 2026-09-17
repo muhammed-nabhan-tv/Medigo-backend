@@ -37,6 +37,14 @@ const appointmentSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    tokenNumber: {
+      type: Number,
+      default: null,
+    },
+    tokenTime: {
+      type: String,
+      default: null,
+    },
     type: {
       type: String,
       default: "Video Consultation",
@@ -74,6 +82,25 @@ const appointmentSchema = new mongoose.Schema(
           category: { type: String, default: "Diagnostic Test" },
           instructions: { type: String, default: "" },
           notes: { type: String, default: "" },
+          reportStatus: {
+            type: String,
+            enum: ["pending", "uploaded", "reviewed"],
+            default: "pending",
+          },
+          report: {
+            fileName: { type: String, default: null },
+            fileType: { type: String, default: null },
+            fileSize: { type: Number, default: 0 },
+            uploadedAt: { type: Date, default: null },
+            patientNotes: { type: String, default: "" },
+            fileUrl: { type: String, default: null },
+          },
+          doctorReview: {
+            comment: { type: String, default: null },
+            reviewedAt: { type: Date, default: null },
+            doctorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+            doctorName: { type: String, default: null },
+          },
         }
       ],
       advice: { type: String, default: "" },
@@ -94,6 +121,18 @@ const appointmentSchema = new mongoose.Schema(
   {
     timestamps: true,
   }
+);
+
+// Compound unique index to prevent double bookings on the same doctor, date, and time (excluding cancelled)
+appointmentSchema.index(
+  { doctorId: 1, date: 1, time: 1 },
+  { unique: true, partialFilterExpression: { status: { $ne: "Cancelled" } } }
+);
+
+// Compound unique index to prevent double bookings on the same doctor, date, and tokenNumber (excluding cancelled)
+appointmentSchema.index(
+  { doctorId: 1, date: 1, tokenNumber: 1 },
+  { unique: true, partialFilterExpression: { status: { $ne: "Cancelled" }, tokenNumber: { $type: "number" } } }
 );
 
 module.exports = mongoose.model("Appointment", appointmentSchema);

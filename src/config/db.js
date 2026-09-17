@@ -1,4 +1,12 @@
 const mongoose = require("mongoose");
+const dns = require("dns");
+
+// Configure reliable DNS servers to prevent queryTxt EREFUSED on MongoDB Atlas +srv connections
+try {
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+} catch (e) {
+  // Ignore if unsupported
+}
 
 /**
  * Clean and resolve MongoDB connection URI from environment variables.

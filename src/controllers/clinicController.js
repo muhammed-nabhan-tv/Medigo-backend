@@ -44,11 +44,21 @@ const setPasswordSchema = z.object({
   password: z.string().min(8, { message: "Password must be at least 8 characters" }),
 });
 
+const checkProfileComplete = (u) => {
+  return Boolean(
+    u &&
+    u.address &&
+    u.address.trim().length > 0 &&
+    ((u.location && u.location.trim().length > 0) || (u.city && u.city.trim().length > 0))
+  );
+};
+
 const issueTokens = async (user) => {
   const token = generateAccessToken(user._id);
   const refreshToken = generateRefreshToken(user._id);
   user.refreshToken = refreshToken;
   await user.save();
+  const isProfileComplete = checkProfileComplete(user);
   return {
     token,
     refreshToken,
@@ -59,6 +69,14 @@ const issueTokens = async (user) => {
       phone: user.phone,
       role: user.role,
       clinicName: user.clinicName || user.fullName,
+      address: user.address || "",
+      location: user.location || "",
+      city: user.city || "",
+      state: user.state || "",
+      pincode: user.pincode || "",
+      latitude: user.latitude ?? null,
+      longitude: user.longitude ?? null,
+      isProfileComplete,
     },
   };
 };
@@ -141,6 +159,20 @@ const inviteDoctor = async (req, res) => {
   try {
     if (req.user.role !== "clinic") {
       return res.status(403).json({ message: "Only clinic accounts can add doctors" });
+    }
+
+    // Verify that the clinic has completed its address and location profile
+    const clinicUser = await User.findById(req.user._id);
+    if (!clinicUser) {
+      return res.status(404).json({ message: "Clinic account not found" });
+    }
+
+    if (!checkProfileComplete(clinicUser)) {
+      return res.status(400).json({
+        message:
+          "Clinic profile incomplete. You must add your clinic address and location in your profile before adding doctors.",
+        requireProfileCompletion: true,
+      });
     }
 
     const data = inviteDoctorSchema.parse(req.body);
@@ -558,6 +590,151 @@ const removeDoctor = async (req, res) => {
   }
 };
 
+const updateClinicProfileSchema = z.object({
+  clinicName: z.string().min(2, { message: "Clinic name must be at least 2 characters" }).optional(),
+  phone: z.string().min(10, { message: "Phone number must be at least 10 digits" }).optional(),
+  address: z.string().min(3, { message: "Street address must be at least 3 characters" }),
+  location: z.string().min(2, { message: "Location / area must be at least 2 characters" }),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  pincode: z.string().optional(),
+  latitude: z.preprocess((v) => (v === "" || v === null || v === undefined ? null : Number(v)), z.number().nullable().optional()),
+  longitude: z.preprocess((v) => (v === "" || v === null || v === undefined ? null : Number(v)), z.number().nullable().optional()),
+});
+
+// Get clinic profile details including completeness check
+const getClinicProfile = async (req, res) => {
+  try {
+    if (req.user.role !== "clinic") {
+      return res.status(403).json({ message: "Only clinic accounts can view clinic profile" });
+    }
+
+    const clinic = await User.findById(req.user._id).select(
+      "-password -refreshToken -otpCode -otpExpires -inviteToken"
+    );
+
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    const isProfileComplete = checkProfileComplete(clinic);
+
+    return res.status(200).json({
+      clinic: {
+        id: clinic._id,
+        _id: clinic._id,
+        fullName: clinic.fullName,
+        clinicName: clinic.clinicName || clinic.fullName,
+        email: clinic.email,
+        phone: clinic.phone,
+        role: clinic.role,
+        address: clinic.address || "",
+        location: clinic.location || "",
+        city: clinic.city || "",
+        state: clinic.state || "",
+        pincode: clinic.pincode || "",
+        latitude: clinic.latitude ?? null,
+        longitude: clinic.longitude ?? null,
+        isProfileComplete,
+        createdAt: clinic.createdAt,
+      },
+      isProfileComplete,
+    });
+  } catch (error) {
+    console.error("Get Clinic Profile Error:", error);
+    return res.status(500).json({ message: "Server error fetching clinic profile" });
+  }
+};
+
+// Update clinic profile details (address, location, etc.)
+const updateClinicProfile = async (req, res) => {
+  try {
+    if (req.user.role !== "clinic") {
+      return res.status(403).json({ message: "Only clinic accounts can update clinic profile" });
+    }
+
+    const data = updateClinicProfileSchema.parse(req.body);
+    const clinic = await User.findById(req.user._id);
+
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    if (data.clinicName) {
+      clinic.clinicName = data.clinicName.trim();
+      clinic.fullName = data.clinicName.trim();
+    }
+    if (data.phone) {
+      clinic.phone = data.phone.trim();
+    }
+    if (data.address !== undefined) {
+      clinic.address = data.address.trim();
+    }
+    if (data.location !== undefined) {
+      clinic.location = data.location.trim();
+    }
+    if (data.city !== undefined) {
+      clinic.city = data.city.trim();
+    }
+    if (data.state !== undefined) {
+      clinic.state = data.state.trim();
+    }
+    if (data.pincode !== undefined) {
+      clinic.pincode = data.pincode.trim();
+    }
+    if (data.latitude !== undefined) {
+      clinic.latitude = data.latitude;
+    }
+    if (data.longitude !== undefined) {
+      clinic.longitude = data.longitude;
+    }
+
+    await clinic.save();
+
+    const isProfileComplete = checkProfileComplete(clinic);
+
+    return res.status(200).json({
+      message: "Clinic profile updated successfully",
+      clinic: {
+        id: clinic._id,
+        _id: clinic._id,
+        fullName: clinic.fullName,
+        clinicName: clinic.clinicName || clinic.fullName,
+        email: clinic.email,
+        phone: clinic.phone,
+        role: clinic.role,
+        address: clinic.address,
+        location: clinic.location,
+        city: clinic.city,
+        state: clinic.state,
+        pincode: clinic.pincode,
+        latitude: clinic.latitude ?? null,
+        longitude: clinic.longitude ?? null,
+        isProfileComplete,
+      },
+      isProfileComplete,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ message: formatZodError(error) });
+    }
+    console.error("Update Clinic Profile Error:", error);
+    return res.status(500).json({ message: "Server error updating clinic profile" });
+  }
+};
+
+// Public: Get all verified clinics
+const getAllClinics = async (req, res) => {
+  try {
+    const clinics = await User.find({ role: "clinic", isVerified: true })
+      .select("clinicName address location city state pincode latitude longitude phone email");
+    return res.status(200).json(clinics);
+  } catch (error) {
+    console.error("Get All Clinics Error:", error);
+    return res.status(500).json({ message: "Server error fetching clinics" });
+  }
+};
+
 module.exports = {
   registerClinic,
   loginClinic,
@@ -571,4 +748,7 @@ module.exports = {
   getClinicDoctorProfile,
   getClinicPrescriptions,
   removeDoctor,
+  getClinicProfile,
+  updateClinicProfile,
+  getAllClinics,
 };

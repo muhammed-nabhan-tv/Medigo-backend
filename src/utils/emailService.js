@@ -4,6 +4,12 @@
  * otherwise logs the message and returns success so local dev still works.
  */
 
+const dns = require("dns");
+// Ensure Node.js prioritizes IPv4 to prevent ETIMEDOUT on IPv6 routes (e.g. 2404:6800:...)
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder("ipv4first");
+}
+
 const getCleanEnv = (name) => {
   const value = process.env[name];
   if (!value) return "";
@@ -28,26 +34,35 @@ const sendEmail = async ({ to, subject, html, text }) => {
     return { sent: true, loggedOnly: true };
   }
 
-  try {
-    // Lazy-require so the app boots without nodemailer if unused
-    const nodemailer = require("nodemailer");
-    const emailHost = getCleanEnv("EMAIL_HOST");
-    const emailPort = Number(getCleanEnv("EMAIL_PORT")) || 587;
-    const emailSecure = getCleanEnv("EMAIL_SECURE") === "true";
-    const emailUser = getCleanEnv("EMAIL_USER");
-    const emailPass = getCleanEnv("EMAIL_PASS");
-    const emailFrom = getCleanEnv("EMAIL_FROM") || `"Medigo" <${emailUser}>`;
+  const nodemailer = require("nodemailer");
+  const emailHost = getCleanEnv("EMAIL_HOST") || "smtp.gmail.com";
+  const emailPort = Number(getCleanEnv("EMAIL_PORT")) || 587;
+  const emailSecure = getCleanEnv("EMAIL_SECURE") === "true";
+  const emailUser = getCleanEnv("EMAIL_USER");
+  const emailPass = getCleanEnv("EMAIL_PASS");
+  const emailFrom = getCleanEnv("EMAIL_FROM") || `"Medigo" <${emailUser}>`;
 
-    const transporter = nodemailer.createTransport({
+  const createTransporter = (port, secure) => {
+    return nodemailer.createTransport({
       host: emailHost,
-      port: emailPort,
-      secure: emailSecure,
+      port,
+      secure,
+      family: 4, // Enforce IPv4 to avoid broken IPv6 routes (ETIMEDOUT on 2404:6800:...)
       auth: {
         user: emailUser,
         pass: emailPass,
       },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
+      tls: {
+        rejectUnauthorized: false,
+      },
     });
+  };
 
+  try {
+    const transporter = createTransporter(emailPort, emailSecure);
     await transporter.sendMail({
       from: emailFrom,
       to,
@@ -59,8 +74,27 @@ const sendEmail = async ({ to, subject, html, text }) => {
     console.log(`[SMTP EMAIL] Sent email to ${to} (Subject: ${subject})`);
     return { sent: true, loggedOnly: false };
   } catch (error) {
-    console.error("Email send failed:", error.message);
-    return { sent: false, loggedOnly: false, error: error.message };
+    console.warn(`Primary SMTP attempt on port ${emailPort} failed: ${error.message}. Attempting fallback...`);
+
+    try {
+      const fallbackPort = emailPort === 465 ? 587 : 465;
+      const fallbackSecure = fallbackPort === 465;
+      const fallbackTransporter = createTransporter(fallbackPort, fallbackSecure);
+
+      await fallbackTransporter.sendMail({
+        from: emailFrom,
+        to,
+        subject,
+        html,
+        text,
+      });
+
+      console.log(`[SMTP EMAIL] Sent email to ${to} via fallback port ${fallbackPort} (Subject: ${subject})`);
+      return { sent: true, loggedOnly: false };
+    } catch (fallbackError) {
+      console.error("Email send failed:", fallbackError.message);
+      return { sent: false, loggedOnly: false, error: fallbackError.message };
+    }
   }
 };
 

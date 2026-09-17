@@ -4,6 +4,7 @@ const { z } = require("zod");
 const User = require("../models/User");
 const { generateAccessToken, generateRefreshToken } = require("../utils/generateToken");
 const { sendOtpEmail, sendPasswordResetOtpEmail, isSmtpConfigured } = require("../utils/emailService");
+const { generateTokensForSchedule } = require("../utils/tokenGenerator");
 
 // Obfuscate phone helper (e.g. +1234567890 -> ******7890)
 const obfuscatePhone = (phone) => {
@@ -264,6 +265,12 @@ const verifyOTP = async (req, res) => {
         dob: user.dob,
         phone: user.phone,
         role: user.role,
+        clinicName: user.clinicName || user.fullName,
+        address: user.address || "",
+        location: user.location || "",
+        city: user.city || "",
+        state: user.state || "",
+        pincode: user.pincode || "",
       },
     });
   } catch (error) {
@@ -382,9 +389,9 @@ const getProfile = async (req, res) => {
 // Get all verified doctors
 const getDoctors = async (req, res) => {
   try {
-    const doctors = await User.find({ role: "doctor", isVerified: true }).select(
-      "-password -refreshToken -otpCode -otpExpires"
-    );
+    const doctors = await User.find({ role: "doctor", isVerified: true })
+      .populate("clinicId", "clinicName address location city state pincode latitude longitude phone")
+      .select("-password -refreshToken -otpCode -otpExpires");
     return res.status(200).json(doctors);
   } catch (error) {
     console.error("Get Doctors Error:", error);
@@ -400,13 +407,85 @@ const updateProfile = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const { fullName, dob, phone, availableDays, availableSlots } = req.body;
+    const {
+      fullName,
+      dob,
+      phone,
+      availableDays,
+      availableSlots,
+      address,
+      location,
+      city,
+      state,
+      pincode,
+      latitude,
+      longitude,
+      clinicName,
+      weeklySchedule,
+    } = req.body;
 
     if (fullName !== undefined) user.fullName = fullName;
     if (dob !== undefined) user.dob = dob;
     if (phone !== undefined) user.phone = phone;
-    if (availableDays !== undefined) user.availableDays = availableDays;
-    if (availableSlots !== undefined) user.availableSlots = availableSlots;
+    if (address !== undefined) user.address = address;
+    if (location !== undefined) user.location = location;
+    if (city !== undefined) user.city = city;
+    if (state !== undefined) user.state = state;
+    if (pincode !== undefined) user.pincode = pincode;
+    if (latitude !== undefined) user.latitude = latitude;
+    if (longitude !== undefined) user.longitude = longitude;
+    if (clinicName !== undefined) user.clinicName = clinicName;
+
+    // Handle weekly schedule and token generation for doctors
+    if (weeklySchedule && Array.isArray(weeklySchedule)) {
+      const processedSchedule = weeklySchedule.map((dayItem) => {
+        const isActive = dayItem.isActive !== false;
+        const startTime = dayItem.startTime || "10:00 AM";
+        const endTime = dayItem.endTime || "03:00 PM";
+        const consultationDuration = parseInt(dayItem.consultationDuration, 10) || 15;
+        const breaks = Array.isArray(dayItem.breaks) ? dayItem.breaks : [];
+
+        const tokens = isActive
+          ? generateTokensForSchedule({
+              startTime,
+              endTime,
+              duration: consultationDuration,
+              breaks,
+            })
+          : [];
+
+        return {
+          day: dayItem.day,
+          isActive,
+          startTime,
+          endTime,
+          consultationDuration,
+          breaks,
+          tokens,
+        };
+      });
+
+      user.weeklySchedule = processedSchedule;
+
+      // Sync active days to availableDays
+      const activeDays = processedSchedule.filter((d) => d.isActive).map((d) => d.day);
+      user.availableDays = activeDays;
+
+      // Sync unique token times to availableSlots for backward compatibility
+      const allTokenTimes = [
+        ...new Set(
+          processedSchedule
+            .filter((d) => d.isActive)
+            .flatMap((d) => d.tokens.map((t) => t.startTime))
+        ),
+      ];
+      if (allTokenTimes.length > 0) {
+        user.availableSlots = allTokenTimes;
+      }
+    } else {
+      if (availableDays !== undefined) user.availableDays = availableDays;
+      if (availableSlots !== undefined) user.availableSlots = availableSlots;
+    }
 
     await user.save();
 
